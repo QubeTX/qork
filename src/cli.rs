@@ -20,12 +20,14 @@ use clap::Parser;
     If the URL has spaces or shell-special characters, wrap it in quotes:\n    \
     qork \"https://example.com/a b?x=1&y=2\"\n\n\
     Use --alias for a custom code, --json for machine-readable output, and\n\
-    `qork update` / `qork uninstall` to manage the install."
+    `qork update` / `qork uninstall` / `qork help` to manage the install.\n\n\
+    Before shortening, qork sanity-checks that the URL is a real, reachable\n\
+    link (a quick HEAD request); pass --no-check to skip that."
 )]
 #[command(arg_required_else_help = true)]
 pub struct Cli {
     /// The URL to shorten (wrap in quotes if it has spaces or special
-    /// characters). The bare words `update` and `uninstall` run those
+    /// characters). The bare words `update`, `uninstall`, and `help` run those
     /// commands instead.
     #[arg(value_name = "URL")]
     pub url: Option<String>,
@@ -46,6 +48,10 @@ pub struct Cli {
     #[arg(long, value_name = "URL", env = "QORK_API_BASE")]
     pub api_base: Option<String>,
 
+    /// Skip the pre-shorten check (don't verify the URL is a real, live link)
+    #[arg(long)]
+    pub no_check: bool,
+
     /// Check for a newer release and update qork in place
     #[arg(long, conflicts_with = "uninstall")]
     pub update: bool,
@@ -53,6 +59,11 @@ pub struct Cli {
     /// Remove qork from this machine
     #[arg(long, conflicts_with = "update")]
     pub uninstall: bool,
+
+    /// Skip the interactive confirmation prompt (for `uninstall`). Required
+    /// when stdin isn't a terminal (scripts/CI) so removal is always explicit.
+    #[arg(short = 'y', long)]
+    pub yes: bool,
 }
 
 #[cfg(test)]
@@ -84,6 +95,22 @@ mod tests {
     fn update_and_uninstall_flags_conflict() {
         let err = Cli::try_parse_from(["qork", "--update", "--uninstall"]).unwrap_err();
         assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn yes_flag_parses_long_and_short() {
+        assert!(
+            Cli::try_parse_from(["qork", "uninstall", "--yes"])
+                .unwrap()
+                .yes
+        );
+        assert!(
+            Cli::try_parse_from(["qork", "uninstall", "-y"])
+                .unwrap()
+                .yes
+        );
+        // Defaults to false when not passed.
+        assert!(!Cli::try_parse_from(["qork", "uninstall"]).unwrap().yes);
     }
 
     #[test]

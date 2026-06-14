@@ -15,8 +15,10 @@ pub enum Command {
     Update,
     /// Remove qork from the machine.
     Uninstall,
-    /// No URL was given (but some flag was) — show a usage hint.
+    /// Explicit help request (`qork help`) — print full help, exit 0.
     Help,
+    /// A flag was given but no URL to shorten — usage error, exit 2.
+    MissingUrl,
 }
 
 impl Cli {
@@ -32,9 +34,12 @@ impl Cli {
         if self.uninstall || self.is_bare_keyword("uninstall") {
             return Command::Uninstall;
         }
+        if self.is_bare_keyword("help") {
+            return Command::Help;
+        }
         match self.url.as_deref() {
             Some(url) => Command::Shorten(url.to_string()),
-            None => Command::Help,
+            None => Command::MissingUrl,
         }
     }
 
@@ -76,7 +81,13 @@ mod tests {
     }
 
     #[test]
-    fn flag_without_url_resolves_to_help() {
-        assert_eq!(parse(&["qork", "--json"]).resolve(), Command::Help);
+    fn bare_help_resolves_to_help() {
+        assert_eq!(parse(&["qork", "help"]).resolve(), Command::Help);
+        assert_eq!(parse(&["qork", "HELP"]).resolve(), Command::Help);
+    }
+
+    #[test]
+    fn flag_without_url_resolves_to_missing_url() {
+        assert_eq!(parse(&["qork", "--json"]).resolve(), Command::MissingUrl);
     }
 }

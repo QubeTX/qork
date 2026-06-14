@@ -51,3 +51,25 @@ fn flag_without_url_is_a_usage_error() {
     // `--json` is an arg (so no auto-help), but there's no URL to shorten.
     qork().arg("--json").assert().failure().code(2);
 }
+
+#[test]
+fn bare_help_prints_documentation() {
+    // `qork help` must show help — NOT shorten the literal word "help".
+    qork()
+        .arg("help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("shorten"));
+}
+
+#[test]
+fn pasted_word_is_rejected_offline() {
+    // A bare word ("asdf") becomes https://asdf — no dot, so the offline
+    // structural check rejects it before any network call (hermetic).
+    qork()
+        .arg("asdf")
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("doesn't look like"));
+}

@@ -76,6 +76,12 @@ jobs:
           echo "Version: $version"
           echo "Target:  ${{ matrix.target }}"
 
+      - name: Checkout tag (for the man page)
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+          persist-credentials: false
+
       - name: Wait for cargo-dist release to exist
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -139,6 +145,12 @@ jobs:
             exit 1
           fi
           install -m 0755 "$bin" stage/usr/local/bin/qork
+
+          # Bundle the man page so `man qork` works on .pkg installs.
+          if [ -f man/qork.1 ]; then
+            mkdir -p stage/usr/local/share/man/man1
+            install -m 0644 man/qork.1 stage/usr/local/share/man/man1/qork.1
+          fi
 
           # Unsigned component package. --root stages a file tree relative to
           # --install-location (/), so stage/usr/local/bin/qork installs to

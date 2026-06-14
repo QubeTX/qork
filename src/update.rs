@@ -396,9 +396,37 @@ fn inject_install_origin(_payload: &mut serde_json::Value) {
     // No-op on non-Windows; the field would always be the same value.
 }
 
-/// Remove qork from the machine. qork installs only a single binary (no shell
-/// profile / registry changes), so uninstall is just deleting that binary.
-pub fn uninstall(config: &Config) -> i32 {
+/// Fully remove qork from this machine — origin-aware on Windows, mirroring
+/// tr300 / wb300.
+///
+/// qork installs ONLY a single binary (no shell-profile edits, no alias, no
+/// auto-run), so a complete uninstall removes: the binary, its PATH entry, the
+/// Add/Remove-Programs entry (installer installs), the `HKCU\Software\Qork`
+/// marker, and the cargo-dist receipt — nothing else.
+///
+/// Strategy per channel (Windows):
+/// - **MSI Global / MSI Corporate** → find qork's Add/Remove-Programs
+///   `UninstallString` in the registry and run `msiexec /x {ProductCode}
+///   /passive /norestart`. perMachine triggers UAC; perUser is silent. This
+///   removes the files, the PATH entry, and the ARP entry.
+/// - **EXE Global / EXE Corporate** → run the Inno Setup uninstaller (the
+///   `QuietUninstallString` / `UninstallString` for qork's AppId) with
+///   `/SILENT /SUPPRESSMSGBOXES /NORESTART`.
+/// - **Cargo / shell / PowerShell installer / Unknown** → the running exe
+///   can't delete itself in place on Windows, so spawn a DETACHED helper that
+///   waits for this process to exit, then deletes the binary; also delete the
+///   cargo-dist receipt and best-effort-clean the `~\.cargo\bin` PATH entry the
+///   installer added.
+///
+/// On Unix a running binary CAN be unlinked, so we remove it directly along
+/// with the cargo-dist receipt.
+///
+/// `assume_yes` skips the confirmation prompt. `stdin_is_tty` gates the prompt:
+/// on an interactive terminal qork asks `Remove qork from this system? [y/N]`;
+/// when stdin is NOT a TTY and `--yes` wasn't given, qork refuses (so scripts
+/// are explicit). Returns a process exit code (0 = ok, 1 = aborted/refused,
+/// 2 = error).
+pub fn uninstall(config: &Config, assume_yes: bool, stdin_is_tty: bool) -> i32 {
     let exe = match std::env::current_exe() {
         Ok(p) => p,
         Err(e) => {
@@ -415,35 +443,439 @@ pub fn uninstall(config: &Config) -> i32 {
     println!("  {}", exe.display());
     println!();
 
+    if !assume_yes {
+        if !stdin_is_tty {
+            eprintln!(
+                "{} refusing to uninstall without confirmation: stdin is not a terminal.",
+                red("error:", config)
+            );
+            eprintln!("Re-run with --yes (or -y) to remove qork non-interactively.");
+            return 1;
+        }
+        if !confirm_uninstall() {
+            println!("Aborted — nothing was removed.");
+            return 1;
+        }
+    }
+
     #[cfg(windows)]
     {
-        // Windows won't let a running process delete its own executable.
-        println!(
-            "Windows can't delete a program while it's running. To finish removing qork, run:"
-        );
-        println!("  del \"{}\"", exe.display());
-        println!();
-        println!("If you installed with cargo, you can instead run:  cargo uninstall qork");
-        0
+        windows_uninstall(&exe, config)
     }
 
     #[cfg(not(windows))]
     {
-        match std::fs::remove_file(&exe) {
-            Ok(()) => {
-                println!("{} qork has been removed.", green("ok", config));
-                println!("(If you installed it with cargo, also run: cargo uninstall qork)");
-                0
+        unix_uninstall(&exe, config)
+    }
+}
+
+/// Prompt `Remove qork from this system? [y/N]` on stdin; only an explicit
+/// `y` / `yes` (case-insensitive) confirms. Any read error counts as "no".
+fn confirm_uninstall() -> bool {
+    use std::io::{BufRead, Write};
+    print!("Remove qork from this system? [y/N]: ");
+    let _ = std::io::stdout().flush();
+    let mut line = String::new();
+    if std::io::stdin().lock().read_line(&mut line).is_err() {
+        return false;
+    }
+    let answer = line.trim().to_ascii_lowercase();
+    answer == "y" || answer == "yes"
+}
+
+// ── Unix uninstall ─────────────────────────────────────────────────
+
+/// Remove the binary (a running Unix binary CAN be unlinked) and the cargo-dist
+/// receipt. Note the PATH entry the installer added (we don't edit shell
+/// profiles).
+#[cfg(not(windows))]
+fn unix_uninstall(exe: &std::path::Path, config: &Config) -> i32 {
+    let mut ok = true;
+
+    match std::fs::remove_file(exe) {
+        Ok(()) => println!("{} removed binary: {}", green("ok", config), exe.display()),
+        Err(e) => {
+            eprintln!(
+                "{} could not remove {}: {e}",
+                red("error:", config),
+                exe.display()
+            );
+            eprintln!("Remove it manually, or run: cargo uninstall qork");
+            ok = false;
+        }
+    }
+
+    remove_cargo_dist_receipt(config);
+
+    println!();
+    println!("Note: the installer added qork's directory to your PATH (in your shell");
+    println!("profile or the cargo env file). qork doesn't edit shell profiles, so if");
+    println!("you want that line gone, remove it by hand.");
+
+    if ok {
+        println!();
+        println!("{} qork has been removed.", green("ok", config));
+        0
+    } else {
+        2
+    }
+}
+
+/// Delete the cargo-dist install receipt, if present. The shell installer
+/// writes it to `$HOME/.config/qork/qork-receipt.json`; the PowerShell
+/// installer to `%LOCALAPPDATA%\qork\qork-receipt.json` (cargo-dist
+/// convention). Best-effort — a missing receipt (cargo / MSI / EXE installs
+/// never write one) is not an error.
+fn remove_cargo_dist_receipt(config: &Config) {
+    for path in cargo_dist_receipt_paths() {
+        if path.exists() {
+            match std::fs::remove_file(&path) {
+                Ok(()) => println!(
+                    "{} removed install receipt: {}",
+                    green("ok", config),
+                    path.display()
+                ),
+                Err(e) => eprintln!(
+                    "  (couldn't remove install receipt {}: {e} — harmless, remove by hand)",
+                    path.display()
+                ),
             }
-            Err(e) => {
-                eprintln!(
-                    "{} could not remove {}: {e}",
-                    red("error:", config),
-                    exe.display()
+        }
+    }
+}
+
+/// Candidate cargo-dist receipt paths for this platform. Returns every location
+/// a shell/PowerShell installer might have written to (we don't know which ran,
+/// so we check all and delete whatever exists).
+fn cargo_dist_receipt_paths() -> Vec<std::path::PathBuf> {
+    let mut paths = Vec::new();
+    #[cfg(windows)]
+    {
+        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+            paths.push(
+                std::path::PathBuf::from(local)
+                    .join("qork")
+                    .join("qork-receipt.json"),
+            );
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        // Shell installer: $XDG_CONFIG_HOME/qork or ~/.config/qork.
+        if let Some(xdg) = std::env::var_os("XDG_CONFIG_HOME") {
+            paths.push(
+                std::path::PathBuf::from(xdg)
+                    .join("qork")
+                    .join("qork-receipt.json"),
+            );
+        } else if let Some(home) = std::env::var_os("HOME") {
+            paths.push(
+                std::path::PathBuf::from(home)
+                    .join(".config")
+                    .join("qork")
+                    .join("qork-receipt.json"),
+            );
+        }
+    }
+    paths
+}
+
+// ── Windows uninstall ──────────────────────────────────────────────
+
+/// Origin-aware Windows uninstall. Branches on `detect_install_origin()`:
+/// installer installs (MSI/EXE) run their recorded uninstaller; cargo / shell /
+/// PowerShell / unknown installs schedule a detached self-delete of the binary.
+/// Always best-effort-deletes the `HKCU\Software\Qork` marker last.
+#[cfg(windows)]
+fn windows_uninstall(exe: &std::path::Path, config: &Config) -> i32 {
+    let origin = detect_install_origin();
+
+    let result = match origin {
+        InstallOrigin::MsiGlobal
+        | InstallOrigin::MsiCorporate
+        | InstallOrigin::ExeGlobal
+        | InstallOrigin::ExeCorporate => match find_uninstall_entry() {
+            Some(entry) => {
+                println!(
+                    "  {} Launching the uninstaller for \"{}\"...",
+                    cyan("*", config),
+                    entry.display_name
                 );
-                eprintln!("Remove it manually, or run: cargo uninstall qork");
-                2
+                match launch_uninstaller(&entry) {
+                    Ok(()) => Ok(format!(
+                        "The {} uninstaller is running; it will remove the binary, its PATH entry, and the Add/Remove Programs entry.",
+                        if entry.is_msi { "Windows Installer" } else { "Inno Setup" }
+                    )),
+                    Err(e) => Err(format!(
+                        "found the Add/Remove Programs entry but couldn't launch its uninstaller: {e}\n         Uninstall via Settings -> Apps -> Installed apps, or run:\n           {}",
+                        entry.command
+                    )),
+                }
             }
+            None => Err(format!(
+                "no Add/Remove Programs entry was found for qork (install origin: {}).\n         Uninstall via Settings -> Apps -> Installed apps.",
+                origin.json_id()
+            )),
+        },
+        InstallOrigin::CargoOrInstaller | InstallOrigin::Unknown => {
+            schedule_self_delete(exe, config)
+        }
+    };
+
+    // Best-effort: remove the HKCU\Software\Qork marker key regardless of path.
+    // The installer uninstallers (MSI/Inno) clean their own InstallSource value,
+    // but a cargo/script install leaves no marker, and a belt-and-braces delete
+    // here makes `qork uninstall` idempotent.
+    remove_install_marker(config);
+
+    match result {
+        Ok(action) => {
+            println!();
+            println!("  {} {}", green("ok", config), green(&action, config));
+            0
+        }
+        Err(message) => {
+            eprintln!();
+            eprintln!("{} {}", red("error:", config), red(&message, config));
+            2
+        }
+    }
+}
+
+/// Schedule a detached `cmd /c` helper that waits for THIS process to exit, then
+/// deletes the binary. Windows refuses to delete a running executable, so the
+/// helper must outlive us. Also deletes the cargo-dist receipt synchronously
+/// (it's a plain file, not in use). Returns the success/diagnostic message.
+#[cfg(windows)]
+fn schedule_self_delete(exe: &std::path::Path, config: &Config) -> Result<String, String> {
+    // Receipt deletion is safe to do now — it's not the running image.
+    remove_cargo_dist_receipt(config);
+    // Best-effort: drop qork's line from the cargo env file the installer wrote.
+    clean_cargo_env_path_entry(config);
+
+    let script = self_delete_command(&exe.to_string_lossy());
+
+    use std::os::windows::process::CommandExt;
+    // DETACHED_PROCESS (0x00000008): the helper has no console window.
+    // CREATE_NEW_PROCESS_GROUP (0x00000200): it doesn't inherit our process
+    //   group, so a Ctrl-C in the terminal after we exit won't kill it.
+    const DETACHED_PROCESS: u32 = 0x0000_0008;
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+
+    match Command::new("cmd")
+        .arg("/c")
+        .arg(&script)
+        .creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(_) => Ok(format!(
+            "Scheduled removal of {} — it will be deleted within a few seconds of this process exiting.",
+            exe.display()
+        )),
+        Err(e) => Err(format!(
+            "couldn't schedule the deferred delete ({e}). Windows can't delete a running program, so finish the removal manually after qork exits:\n           del /f /q \"{}\"",
+            exe.display()
+        )),
+    }
+}
+
+/// Build the detached `cmd /c` command that waits for the running qork to exit
+/// and then deletes the binary. `ping 127.0.0.1 -n 3` is a portable ~2s sleep
+/// (no `timeout` dependency, which can fail when stdin is redirected). Pure +
+/// unit-testable so the quoting/structure is pinned without spawning anything.
+#[cfg(any(target_os = "windows", test))]
+fn self_delete_command(exe_path: &str) -> String {
+    format!("(ping 127.0.0.1 -n 3 >nul & del /f /q \"{exe_path}\")")
+}
+
+/// Best-effort: remove qork's `~\.cargo\bin` entry from the cargo-dist env file,
+/// but ONLY the line qork added — never cargo's own PATH setup. The cargo-dist
+/// shell installer appends a source line; on Windows the PowerShell installer
+/// edits the user PATH env var directly (handled by Windows itself on cargo
+/// uninstall). This is intentionally conservative: if we can't be sure a line is
+/// qork's, we leave it. Today this is a documentation no-op stub on Windows —
+/// the PowerShell installer's PATH edit and the binary delete cover the real
+/// cases — but it keeps the call site honest about intent.
+#[cfg(windows)]
+fn clean_cargo_env_path_entry(_config: &Config) {
+    // The cargo-dist PowerShell installer adds `%USERPROFILE%\.cargo\bin` to the
+    // user PATH only if it wasn't already there. We don't remove it because
+    // cargo itself relies on that directory being on PATH, and qork can't tell
+    // whether qork or cargo put it there. Removing it could break `cargo
+    // install`'d tools. Leaving the (now-empty-of-qork) directory on PATH is
+    // harmless. Documented here so the omission is deliberate, not forgotten.
+}
+
+/// Remove the `HKCU\Software\Qork` install-origin marker key. Best-effort: a
+/// missing key (cargo/script install) is not an error.
+#[cfg(windows)]
+fn remove_install_marker(config: &Config) {
+    use winreg::enums::HKEY_CURRENT_USER;
+    use winreg::RegKey;
+
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    match hkcu.delete_subkey_all("Software\\Qork") {
+        Ok(()) => println!(
+            "  {} removed registry marker HKCU\\Software\\Qork",
+            green("ok", config)
+        ),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => eprintln!("  (couldn't remove HKCU\\Software\\Qork: {e} — harmless)"),
+    }
+}
+
+/// One Add/Remove Programs entry for qork.
+#[cfg(windows)]
+struct UninstallEntry {
+    display_name: String,
+    /// The recorded uninstall command. Prefer `QuietUninstallString` (Inno
+    /// records one) over `UninstallString`.
+    command: String,
+    quiet: bool,
+    is_msi: bool,
+}
+
+/// Scan the uninstall registry roots (per-machine 64-bit, per-machine 32-bit
+/// via WOW6432Node, and per-user) for qork's Add/Remove Programs entry. Matches
+/// the exact product DisplayNames the four installers register: `qork` (Global
+/// MSI/EXE) and `qork (Corporate Edition)` (Corporate MSI/EXE).
+#[cfg(windows)]
+fn find_uninstall_entry() -> Option<UninstallEntry> {
+    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+    use winreg::RegKey;
+
+    const SUBKEY: &str = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall";
+    const SUBKEY_32: &str = r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall";
+    let roots = [
+        (RegKey::predef(HKEY_LOCAL_MACHINE), SUBKEY),
+        (RegKey::predef(HKEY_LOCAL_MACHINE), SUBKEY_32),
+        (RegKey::predef(HKEY_CURRENT_USER), SUBKEY),
+    ];
+
+    for (root, subkey) in roots {
+        let Ok(uninstall) = root.open_subkey(subkey) else {
+            continue;
+        };
+        for name in uninstall.enum_keys().flatten() {
+            let Ok(entry) = uninstall.open_subkey(&name) else {
+                continue;
+            };
+            let Ok(display): Result<String, _> = entry.get_value("DisplayName") else {
+                continue;
+            };
+            if !is_qork_display_name(&display) {
+                continue;
+            }
+            let quiet_cmd: Option<String> = entry.get_value("QuietUninstallString").ok();
+            let loud_cmd: Option<String> = entry.get_value("UninstallString").ok();
+            let (command, quiet) = match (quiet_cmd, loud_cmd) {
+                (Some(q), _) if !q.trim().is_empty() => (q, true),
+                (_, Some(l)) if !l.trim().is_empty() => (l, false),
+                _ => continue,
+            };
+            let is_msi = command.to_lowercase().contains("msiexec");
+            return Some(UninstallEntry {
+                display_name: display,
+                command,
+                quiet,
+                is_msi,
+            });
+        }
+    }
+    None
+}
+
+/// Exact-match qork's product DisplayName. A substring match could launch some
+/// unrelated product's uninstaller, so we only accept the two names the
+/// installers register (case-insensitively).
+#[cfg(any(target_os = "windows", test))]
+fn is_qork_display_name(display: &str) -> bool {
+    let lower = display.trim().to_lowercase();
+    lower == "qork" || lower == "qork (corporate edition)"
+}
+
+/// Launch the recorded uninstaller, detached, so it outlives this (running)
+/// process and can delete the binary. MSI commands are rewritten to `/X` and run
+/// `/passive /norestart`; Inno commands run `/SILENT /SUPPRESSMSGBOXES
+/// /NORESTART` (added only when the registry didn't already record a quiet
+/// command).
+#[cfg(windows)]
+fn launch_uninstaller(entry: &UninstallEntry) -> std::io::Result<()> {
+    use std::os::windows::process::CommandExt;
+    const DETACHED_PROCESS: u32 = 0x0000_0008;
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+
+    // Windows Installer often records `MsiExec.exe /I{GUID}` (maintenance/repair
+    // mode) as the UninstallString. Always rewrite to `/X` (uninstall).
+    let command = if entry.is_msi {
+        msi_uninstall_command(&entry.command)
+    } else {
+        entry.command.clone()
+    };
+    let (program, mut args) = split_command_line(&command);
+
+    if entry.is_msi {
+        // /passive: progress UI, no prompts (we already confirmed in the
+        // terminal). /norestart: don't reboot for a file replace. For the
+        // perMachine MSI this triggers UAC; the perUser MSI is silent.
+        args.push("/passive".to_string());
+        args.push("/norestart".to_string());
+    } else if !entry.quiet {
+        // Inno: drive it silently when the registry didn't record a quiet
+        // command. (When it did, QuietUninstallString already carries /SILENT.)
+        args.push("/SILENT".to_string());
+        args.push("/SUPPRESSMSGBOXES".to_string());
+        args.push("/NORESTART".to_string());
+    }
+
+    let mut cmd = Command::new(program);
+    for a in &args {
+        cmd.arg(a);
+    }
+    cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP)
+        .spawn()
+        .map(|_| ())
+}
+
+/// Rewrite an msiexec command line into uninstall (`/X`) mode by extracting the
+/// `{GUID}` product code and rebuilding as `MsiExec.exe /X{GUID}`. Registry
+/// UninstallStrings come as `/I{GUID}`, `/X{GUID}`, `/x {GUID}`, etc. Falls back
+/// to the original string when no GUID is present. Pure + unit-tested.
+#[cfg(any(target_os = "windows", test))]
+fn msi_uninstall_command(command: &str) -> String {
+    let (start, end) = match (command.find('{'), command.rfind('}')) {
+        (Some(s), Some(e)) if e > s => (s, e),
+        _ => return command.to_string(),
+    };
+    format!("MsiExec.exe /X{}", &command[start..=end])
+}
+
+/// Split a registry command line into (program, args): a leading quoted span or
+/// the text up to the first space, then whitespace-separated arguments. Known
+/// limit: a QUOTED argument after the program (e.g. `/LOG="a b.log"`) would be
+/// split on its inner space — none of qork's four installers record one. Pure +
+/// unit-tested.
+#[cfg(any(target_os = "windows", test))]
+fn split_command_line(command: &str) -> (String, Vec<String>) {
+    let command = command.trim();
+    if let Some(rest) = command.strip_prefix('"') {
+        match rest.split_once('"') {
+            Some((program, tail)) => (
+                program.to_string(),
+                tail.split_whitespace().map(str::to_string).collect(),
+            ),
+            None => (rest.to_string(), Vec::new()),
+        }
+    } else {
+        match command.split_once(' ') {
+            Some((program, tail)) => (
+                program.to_string(),
+                tail.split_whitespace().map(str::to_string).collect(),
+            ),
+            None => (command.to_string(), Vec::new()),
         }
     }
 }
@@ -1370,6 +1802,97 @@ mod tests {
     fn parse_sha256_sidecar_rejects_non_hex_chars() {
         let bad = format!("{}  *foo.msi", "g".repeat(64));
         assert_eq!(parse_sha256_sidecar(&bad), None);
+    }
+
+    #[test]
+    fn self_delete_command_quotes_path_and_waits() {
+        let cmd = self_delete_command(r"C:\Users\alice\.cargo\bin\qork.exe");
+        // Must quote the path (spaces / backslashes) and delete it forcibly.
+        assert!(
+            cmd.contains(r#"del /f /q "C:\Users\alice\.cargo\bin\qork.exe""#),
+            "cmd: {cmd}"
+        );
+        // Must wait first so the running qork can exit and release the image.
+        assert!(cmd.contains("ping 127.0.0.1 -n 3"), "cmd: {cmd}");
+        // The ping output is suppressed so the detached helper is silent.
+        assert!(cmd.contains(">nul"), "cmd: {cmd}");
+    }
+
+    #[test]
+    fn self_delete_command_handles_path_with_spaces() {
+        let cmd = self_delete_command(r"C:\Program Files\qork\bin\qork.exe");
+        assert!(
+            cmd.contains(r#"del /f /q "C:\Program Files\qork\bin\qork.exe""#),
+            "cmd: {cmd}"
+        );
+    }
+
+    #[test]
+    fn is_qork_display_name_matches_exact_product_names_only() {
+        assert!(is_qork_display_name("qork"));
+        assert!(is_qork_display_name("qork (Corporate Edition)"));
+        // Case-insensitive + tolerant of surrounding whitespace.
+        assert!(is_qork_display_name("QORK"));
+        assert!(is_qork_display_name("  qork (corporate edition)  "));
+        // Must NOT match unrelated products that merely contain "qork".
+        assert!(!is_qork_display_name("qorkscrew"));
+        assert!(!is_qork_display_name("My qork tool"));
+        assert!(!is_qork_display_name("workqork"));
+        assert!(!is_qork_display_name(""));
+    }
+
+    #[test]
+    fn msi_uninstall_command_forces_x_mode() {
+        // Real-world UninstallString uses /I (repair mode) — must become /X.
+        assert_eq!(
+            msi_uninstall_command("MsiExec.exe /I{1C44B9CA-20FD-4AED-A8AE-1D169AE14203}"),
+            "MsiExec.exe /X{1C44B9CA-20FD-4AED-A8AE-1D169AE14203}"
+        );
+        // Already /X — GUID preserved, normalized form.
+        assert_eq!(
+            msi_uninstall_command("MsiExec.exe /X{AAAA-BBBB}"),
+            "MsiExec.exe /X{AAAA-BBBB}"
+        );
+        // Lowercase + spaced form.
+        assert_eq!(
+            msi_uninstall_command("msiexec.exe /x {CCCC-DDDD}"),
+            "MsiExec.exe /X{CCCC-DDDD}"
+        );
+        // No GUID → left untouched.
+        assert_eq!(msi_uninstall_command("whatever.exe"), "whatever.exe");
+    }
+
+    #[test]
+    fn split_command_line_handles_quoted_and_bare_programs() {
+        // Inno's UninstallString: a quoted path to unins000.exe + a flag.
+        let (p, a) = split_command_line(r#""C:\Program Files\qork\unins000.exe" /SILENT"#);
+        assert_eq!(p, r"C:\Program Files\qork\unins000.exe");
+        assert_eq!(a, vec!["/SILENT"]);
+
+        // MSI form: bare program, GUID arg.
+        let (p, a) = split_command_line("MsiExec.exe /X{ABCD-1234}");
+        assert_eq!(p, "MsiExec.exe");
+        assert_eq!(a, vec!["/X{ABCD-1234}"]);
+
+        // Program with no args.
+        let (p, a) = split_command_line("solo.exe");
+        assert_eq!(p, "solo.exe");
+        assert!(a.is_empty());
+    }
+
+    #[test]
+    fn cargo_dist_receipt_paths_named_correctly() {
+        // The receipt filename is the cargo-dist convention `<app>-receipt.json`.
+        // We don't assert the directory (it depends on env vars), only that any
+        // candidate path ends with the expected filename so a typo can't slip in.
+        for path in cargo_dist_receipt_paths() {
+            assert_eq!(
+                path.file_name().and_then(|n| n.to_str()),
+                Some("qork-receipt.json"),
+                "unexpected receipt path: {}",
+                path.display()
+            );
+        }
     }
 
     #[cfg(windows)]

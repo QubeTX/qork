@@ -534,7 +534,7 @@ dependencies = [
 
 [[package]]
 name = "qork"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -545,6 +545,7 @@ dependencies = [
  "sha2",
  "thiserror",
  "ureq",
+ "url",
  "winreg",
 ]
 

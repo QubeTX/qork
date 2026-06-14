@@ -75,21 +75,31 @@ impl ShortLink {
     }
 }
 
+/// Cheap, offline sanity check shared by `main` (before the liveness ping) and
+/// `shorten`: returns a user-facing message when the input clearly isn't a
+/// single URL — empty, or containing whitespace (an unquoted URL with a space).
+/// The server remains the source of truth for full validation.
+pub fn quick_url_check(url: &str) -> Option<String> {
+    let u = url.trim();
+    if u.is_empty() {
+        return Some("a URL is required".into());
+    }
+    if u.chars().any(char::is_whitespace) {
+        return Some(
+            "the URL contains spaces — wrap it in quotes, e.g. qork \"https://example.com/a b\""
+                .into(),
+        );
+    }
+    None
+}
+
 /// Shorten `url` against `{api_base}/api/shorten`. `alias`, when non-empty,
 /// requests a custom short code. Returns the created (or existing) link.
 pub fn shorten(url: &str, alias: Option<&str>, config: &Config) -> Result<ShortLink> {
+    if let Some(msg) = quick_url_check(url) {
+        return Err(AppError::invalid_url(msg));
+    }
     let url = url.trim();
-    if url.is_empty() {
-        return Err(AppError::invalid_url("a URL is required"));
-    }
-    // Fast, offline guard for the single most common mistake — an unquoted URL
-    // with a space. The server is still the source of truth for real validation
-    // (scheme, host, reserved words); this just fails obvious cases instantly.
-    if url.chars().any(char::is_whitespace) {
-        return Err(AppError::invalid_url(
-            "the URL contains spaces — wrap it in quotes, e.g. qork \"https://example.com/a b\"",
-        ));
-    }
 
     let endpoint = format!("{}/api/shorten", config.api_base);
 

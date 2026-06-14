@@ -1,10 +1,10 @@
 .ie \n(.g .ds Aq \(aq
 .el .ds Aq '
-.TH qork 1  "qork 1.0.1"
+.TH qork 1  "qork 1.1.0"
 .SH NAME
 qork \- Shorten URLs from your terminal — the qork.me client
 .SH SYNOPSIS
-\fBqork\fR [\fB\-a\fR|\fB\-\-alias\fR] [\fB\-\-json\fR] [\fB\-\-no\-color\fR] [\fB\-\-api\-base\fR] [\fB\-\-update\fR] [\fB\-\-uninstall\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] [\fIURL\fR]
+\fBqork\fR [\fB\-a\fR|\fB\-\-alias\fR] [\fB\-\-json\fR] [\fB\-\-no\-color\fR] [\fB\-\-api\-base\fR] [\fB\-\-no\-check\fR] [\fB\-\-update\fR] [\fB\-\-uninstall\fR] [\fB\-y\fR|\fB\-\-yes\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] [\fIURL\fR]
 .SH DESCRIPTION
 qork shortens a URL by calling the qork.me API and prints the short link.
 .PP
@@ -15,7 +15,10 @@ If the URL has spaces or shell\-special characters, wrap it in quotes:
     qork "https://example.com/a b?x=1&y=2"
 .PP
 Use \-\-alias for a custom code, \-\-json for machine\-readable output, and
-`qork update` / `qork uninstall` to manage the install.
+`qork update` / `qork uninstall` / `qork help` to manage the install.
+.PP
+Before shortening, qork sanity\-checks that the URL is a real, reachable
+link (a quick HEAD request); pass \-\-no\-check to skip that.
 .SH OPTIONS
 .TP
 \fB\-a\fR, \fB\-\-alias\fR \fI<ALIAS>\fR
@@ -33,11 +36,17 @@ API base URL to call (default: https://qork.me)
 May also be specified with the \fBQORK_API_BASE\fR environment variable.
 .RE
 .TP
+\fB\-\-no\-check\fR
+Skip the pre\-shorten check (don\*(Aqt verify the URL is a real, live link)
+.TP
 \fB\-\-update\fR
 Check for a newer release and update qork in place
 .TP
 \fB\-\-uninstall\fR
 Remove qork from this machine
+.TP
+\fB\-y\fR, \fB\-\-yes\fR
+Skip the interactive confirmation prompt (for `uninstall`). Required when stdin isn\*(Aqt a terminal (scripts/CI) so removal is always explicit
 .TP
 \fB\-h\fR, \fB\-\-help\fR
 Print help (see a summary with \*(Aq\-h\*(Aq)
@@ -46,8 +55,8 @@ Print help (see a summary with \*(Aq\-h\*(Aq)
 Print version
 .TP
 [\fIURL\fR]
-The URL to shorten (wrap in quotes if it has spaces or special characters). The bare words `update` and `uninstall` run those commands instead
+The URL to shorten (wrap in quotes if it has spaces or special characters). The bare words `update`, `uninstall`, and `help` run those commands instead
 .SH VERSION
-v1.0.1
+v1.1.0
 .SH AUTHORS
 Emmett S <hey@emmetts.dev>

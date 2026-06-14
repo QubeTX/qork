@@ -16,6 +16,7 @@
 //! ```
 
 pub mod api;
+pub mod check;
 pub mod cli;
 pub mod command;
 pub mod config;
