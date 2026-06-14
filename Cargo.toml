@@ -1,0 +1,82 @@
+[package]
+name = "qork"
+version = "1.0.0"
+edition = "2021"
+# MSRV pinned to match the QubeTX CLI family (tr300 / wb300). 1.95 is what
+# the release toolchain builds with; older toolchains are untested.
+rust-version = "1.95"
+authors = ["Emmett S <hey@emmetts.dev>"]
+description = "Shorten URLs from your terminal — the qork.me command-line client"
+readme = "README.md"
+license = "PolyForm-Noncommercial-1.0.0"
+repository = "https://github.com/QubeTX/qork"
+homepage = "https://qork.me/install"
+keywords = ["cli", "url", "shortener", "url-shortener", "qork"]
+categories = ["command-line-utilities"]
+include = [
+    "/Cargo.lock",
+    "/Cargo.toml",
+    "/LICENSE",
+    "/README.md",
+    "/build.rs",
+    "/man/**",
+    "/src/**",
+    "/tests/**",
+    "/wix/**",
+]
+
+[package.metadata.wix]
+upgrade-guid = "1C44B9CA-20FD-4AED-A8AE-1D169AE14203"
+path-guid = "AEF04F1C-B31D-483F-9AC1-43FB94B5251C"
+license = false
+eula = false
+
+[[bin]]
+name = "qork"
+path = "src/main.rs"
+
+[dependencies]
+# CLI parsing (derive + env-var defaults for --api-base).
+clap = { version = "4.5", features = ["derive", "env"] }
+# Blocking HTTP client with TLS + JSON helpers — same as tr300/wb300.
+ureq = { version = "2", features = ["tls", "json"] }
+# JSON (de)serialization for the /api/shorten envelope.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Ergonomic error enum.
+thiserror = "2.0"
+
+[build-dependencies]
+# build.rs renders the man page from the clap definition.
+clap = { version = "4.5", features = ["derive", "env"] }
+clap_mangen = "0.2"
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+
+# The profile that 'cargo dist' builds with.
+[profile.dist]
+inherits = "release"
+lto = "thin"
+
+# Config for 'dist'
+[workspace.metadata.dist]
+# The preferred dist version to use in CI (Cargo.toml SemVer syntax)
+cargo-dist-version = "0.31.0"
+# CI backends to support
+ci = "github"
+# Skip checking whether the specified configuration files are up to date
+allow-dirty = ["msi"]
+# The installers to generate for each app
+installers = ["shell", "powershell", "msi"]
+# Target platforms to build apps for (Rust target-triple syntax)
+targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-unknown-linux-musl", "x86_64-pc-windows-msvc"]
+# Which actions to run on pull requests
+pr-run-mode = "plan"
+# Whether to install an updater program
+install-updater = false
+# Path that installers should place binaries in
+install-path = "CARGO_HOME"
+# Whether to publish prereleases to package managers
+publish-prereleases = false

@@ -1,0 +1,115 @@
+name: CI
+
+# Quality gate for every commit and PR. Complements the cargo-dist
+# release.yml workflow (which only runs on tag push to ship binaries).
+#
+# Jobs:
+#   fmt        — cargo fmt --check
+#   clippy     — cargo clippy --all-targets -- -D warnings
+#   test       — cargo test (Linux glibc + macOS ARM + Windows)
+#   build      — release build smoke test (--version / --help) on each runner
+#   audit      — cargo-audit (advisory; never blocks)
+#   dist-plan  — verify the cargo-dist plan parses before tagging
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --locked --all-targets --workspace -- -D warnings
+
+  test:
+    name: Test (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: "Linux x86_64 glibc"
+          - os: macos-latest
+            name: "macOS ARM (Apple Silicon)"
+          - os: windows-latest
+            name: "Windows x86_64"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --locked --workspace --all-targets
+
+  build:
+    name: Release Build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: "Linux x86_64 glibc"
+          - os: macos-latest
+            name: "macOS ARM (Apple Silicon)"
+          - os: windows-latest
+            name: "Windows x86_64"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --locked --release --workspace
+      - name: Smoke test (offline)
+        shell: bash
+        run: |
+          BIN="./target/release/qork"
+          [ "${{ runner.os }}" = "Windows" ] && BIN="./target/release/qork.exe"
+          "$BIN" --version
+          "$BIN" --help | head -5
+
+  audit:
+    name: Security audit
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-audit
+        run: cargo install --locked cargo-audit
+      - run: cargo audit
+
+  dist-plan:
+    name: cargo-dist plan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cargo-dist v0.31.0
+        run: |
+          curl --proto '=https' --tlsv1.2 -LsSf \
+            https://github.com/axodotdev/cargo-dist/releases/download/v0.31.0/cargo-dist-installer.sh | sh
+      - name: Verify dist plan parses
+        run: ~/.cargo/bin/dist plan

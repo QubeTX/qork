@@ -1,0 +1,53 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH qork 1  "qork 1.0.0"
+.SH NAME
+qork \- Shorten URLs from your terminal — the qork.me client
+.SH SYNOPSIS
+\fBqork\fR [\fB\-a\fR|\fB\-\-alias\fR] [\fB\-\-json\fR] [\fB\-\-no\-color\fR] [\fB\-\-api\-base\fR] [\fB\-\-update\fR] [\fB\-\-uninstall\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] [\fIURL\fR]
+.SH DESCRIPTION
+qork shortens a URL by calling the qork.me API and prints the short link.
+.PP
+Paste a normal URL straight in:
+    qork https://example.com/some/very/long/path
+.PP
+If the URL has spaces or shell\-special characters, wrap it in quotes:
+    qork "https://example.com/a b?x=1&y=2"
+.PP
+Use \-\-alias for a custom code, \-\-json for machine\-readable output, and
+`qork update` / `qork uninstall` to manage the install.
+.SH OPTIONS
+.TP
+\fB\-a\fR, \fB\-\-alias\fR \fI<ALIAS>\fR
+Request a custom short code (alias) instead of a generated one
+.TP
+\fB\-\-json\fR
+Print the raw JSON response (for scripts and agents)
+.TP
+\fB\-\-no\-color\fR
+Disable colored output
+.TP
+\fB\-\-api\-base\fR \fI<URL>\fR
+API base URL to call (default: https://qork.me)
+.RS
+May also be specified with the \fBQORK_API_BASE\fR environment variable.
+.RE
+.TP
+\fB\-\-update\fR
+Check for a newer release and update qork in place
+.TP
+\fB\-\-uninstall\fR
+Remove qork from this machine
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help (see a summary with \*(Aq\-h\*(Aq)
+.TP
+\fB\-V\fR, \fB\-\-version\fR
+Print version
+.TP
+[\fIURL\fR]
+The URL to shorten (wrap in quotes if it has spaces or special characters). The bare words `update` and `uninstall` run those commands instead
+.SH VERSION
+v1.0.0
+.SH AUTHORS
+Emmett S <hey@emmetts.dev>

@@ -1,0 +1,47 @@
+# Rust/Cargo
+/target/
+**/*.rs.bk
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Debug
+*.pdb
+
+# Coverage
+*.gcno
+*.gcda
+coverage/
+*.profraw
+*.profdata
+
+# Documentation
+/doc/
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Environment — holds the crates.io token for local `cargo publish`. NEVER commit.
+.env
+.env.local
+
+# Claude Code per-machine settings
+.claude/settings.local.json
+.claude/*.lock
