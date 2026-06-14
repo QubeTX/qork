@@ -1,6 +1,6 @@
 [package]
 name = "qork"
-version = "1.1.0"
+version = "1.1.1"
 edition = "2021"
 # MSRV pinned to match the QubeTX CLI family (tr300 / wb300). 1.95 is what
 # the release toolchain builds with; older toolchains are untested.

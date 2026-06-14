@@ -95,8 +95,11 @@ qork uninstall --yes   # …without the confirmation prompt (for scripts/CI)
 `qork update` is aware of how qork was installed and re-runs the matching installer: on Windows it
 reads the `HKCU\Software\Qork\InstallSource` marker to pick the matching Global/Corporate MSI or
 Inno EXE (downloading it, SHA256-verifying it against the release `.sha256` sidecar, then
-re-checking `qork --version`); a `cargo` / shell / PowerShell install falls through to a
-`cargo install qork --force` → `curl|sh` / `irm|iex` chain. macOS/Linux always use that chain.
+re-checking `qork --version`); a Windows `cargo` / PowerShell-installer install falls through to a
+`cargo install qork --force` → `irm|iex` chain. **On macOS/Linux, qork update prefers the prebuilt
+`curl|sh` (then `wget`) installer and only falls back to `cargo install qork --force` as a last
+resort** — so updating needs no Rust toolchain and doesn't recompile from source (a cargo-less
+machine updates fine; a machine with cargo still gets the fast prebuilt path first).
 
 `qork uninstall` fully removes qork on every platform — including Windows. It's origin-aware:
 
@@ -263,8 +266,8 @@ To cut a release, bump the `version` in `Cargo.toml`, commit, and push to `main`
 `crates-publish.yml` publishes to crates.io once CI is green). Then push a matching tag:
 
 ```sh
-git tag v1.1.0
-git push origin v1.1.0
+git tag v1.1.1
+git push origin v1.1.1
 ```
 
 The tag push fans out to **three** workflows that all upload to the same GitHub Release:

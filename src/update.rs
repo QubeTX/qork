@@ -965,15 +965,26 @@ fn is_newer(current: &str, latest: &str) -> bool {
 
 fn order_strategies(cargo_invokable: bool, os: TargetOs) -> Vec<UpdateStrategy> {
     let mut strategies = Vec::new();
-    if cargo_invokable {
-        strategies.push(UpdateStrategy::Cargo);
-    }
     match os {
         TargetOs::Unix => {
+            // Prefer the prebuilt-binary installer over cargo on macOS/Linux: it
+            // needs no Rust toolchain, doesn't recompile from source (seconds vs.
+            // a multi-minute build), and matches the recommended install path.
+            // cargo is kept only as a last-resort fallback when it's available.
             strategies.push(UpdateStrategy::InstallerCurl);
             strategies.push(UpdateStrategy::InstallerWget);
+            if cargo_invokable {
+                strategies.push(UpdateStrategy::Cargo);
+            }
         }
         TargetOs::Windows => {
+            // On Windows, MSI/EXE installs are dispatched earlier in
+            // build_strategy_list(); this chain is only reached for cargo /
+            // PowerShell-installer origins, where cargo stays first for
+            // continuity.
+            if cargo_invokable {
+                strategies.push(UpdateStrategy::Cargo);
+            }
             strategies.push(UpdateStrategy::InstallerPowerShell);
             strategies.push(UpdateStrategy::InstallerPwsh);
         }
@@ -1603,13 +1614,15 @@ mod tests {
     }
 
     #[test]
-    fn unix_orders_cargo_first() {
+    fn unix_prefers_installer_over_cargo() {
+        // macOS/Linux: the prebuilt installer comes first; cargo is only a
+        // last-resort fallback when it's available (it recompiles from source).
         assert_eq!(
             order_strategies(true, TargetOs::Unix),
             vec![
-                UpdateStrategy::Cargo,
                 UpdateStrategy::InstallerCurl,
-                UpdateStrategy::InstallerWget
+                UpdateStrategy::InstallerWget,
+                UpdateStrategy::Cargo
             ]
         );
     }
