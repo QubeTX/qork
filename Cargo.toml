@@ -1,6 +1,6 @@
 [package]
 name = "qork"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2021"
 # MSRV pinned to match the QubeTX CLI family (tr300 / wb300). 1.95 is what
 # the release toolchain builds with; older toolchains are untested.
@@ -23,6 +23,8 @@ include = [
     "/src/**",
     "/tests/**",
     "/wix/**",
+    "/wix-corporate/**",
+    "/inno/**",
 ]
 
 [package.metadata.wix]
@@ -55,6 +57,19 @@ clap_mangen = "0.2"
 assert_cmd = "2"
 predicates = "3"
 
+[target.'cfg(windows)'.dependencies]
+# Used by src/update.rs::read_install_source_marker() to read the
+# HKCU\Software\Qork\InstallSource value written by the four first-class
+# Windows installers (v1.0.1+). Raw winapi for one registry read would be
+# ~30 lines of unsafe; winreg keeps it to ~5 lines of safe Rust.
+winreg = "0.52"
+# Used by src/update.rs to verify the SHA256 of MSI / EXE installers
+# downloaded by `qork update` against the .sha256 sidecar the
+# windows-installers.yml workflow publishes (v1.0.1+). Defends against an
+# in-flight MITM swap of the installer payload — TLS alone is not sufficient
+# against corporate-proxy interception with a trusted root.
+sha2 = "0.10"
+
 # The profile that 'cargo dist' builds with.
 [profile.dist]
 inherits = "release"
@@ -66,6 +81,11 @@ lto = "thin"
 cargo-dist-version = "0.31.0"
 # CI backends to support
 ci = "github"
+# wix/main.wxs is hand-customized with the InstallSourceMarker Component
+# (v1.0.1+) so `qork update` can dispatch to the matching installer for
+# in-place upgrades. allow-dirty = ["msi"] tells cargo-dist not to regenerate
+# (and thus clobber) that file.
+allow-dirty = ["msi"]
 # The installers to generate for each app
 installers = ["shell", "powershell", "msi"]
 # Target platforms to build apps for (Rust target-triple syntax)

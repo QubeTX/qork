@@ -109,6 +109,25 @@
                     </Component>
                     -->
 
+                    <!-- Install-source marker (v1.0.1+). qork update reads this
+                         from HKCU and picks the matching installer to download for
+                         in-place upgrades. HKCU even on a perMachine install: the
+                         user running this MSI is the user who'll later invoke
+                         `qork update`. The path-based fallback in
+                         src/update.rs::classify_install_path() catches the rare
+                         "admin pushed via Intune, end-user is different" case.
+                         Value must match the `msi-global` arm in src/update.rs.
+                         See wix-corporate/corporate.wxs for the perUser sibling. -->
+                    <Component Id='InstallSourceMarker' Guid='4B9A8BEB-B488-46D8-8E70-ADA29B79C2CC'>
+                        <RegistryValue
+                            Root='HKCU'
+                            Key='Software\Qork'
+                            Name='InstallSource'
+                            Type='string'
+                            Value='msi-global'
+                            KeyPath='yes'/>
+                    </Component>
+
                     <Directory Id='Bin' Name='bin'>
                         <Component Id='Path' Guid='AEF04F1C-B31D-483F-9AC1-43FB94B5251C' KeyPath='yes'>
                             <Environment
@@ -150,6 +169,7 @@
             <!--<ComponentRef Id='License'/>-->
 
             <ComponentRef Id='binary0'/>
+            <ComponentRef Id='InstallSourceMarker'/>
 
             <Feature
                 Id='Environment'
