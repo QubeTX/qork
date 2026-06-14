@@ -56,6 +56,11 @@ Grab the archive for your platform from the
 
 Each asset has a matching `.sha256` sidecar for verification.
 
+**Native installers** ship with every release too — Windows `.msi`/`.exe` (Global per-machine +
+Corporate per-user), macOS `.pkg` (Apple Silicon + Intel), and Linux `.deb`/`.rpm` (x86_64 + ARM64).
+The full matrix with one-click downloads is at **<https://qork.me/install>**. On macOS and Linux the
+one-liner above is the recommended path; on Windows the MSI/EXE installer is recommended.
+
 ### Updating & uninstalling
 
 ```sh
