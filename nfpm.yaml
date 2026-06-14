@@ -1,0 +1,47 @@
+# nfpm packaging config for qork's Linux .deb / .rpm installers.
+#
+# Consumed by .github/workflows/unix-installers.yml, which builds one .deb and
+# one .rpm per architecture (x86_64 + aarch64) from the cargo-dist-built
+# binaries and uploads them to the GitHub Release for the tag.
+#
+# The workflow sets two environment variables before each `nfpm package` run;
+# nfpm expands ${VAR} references in fields at package time:
+#   QORK_VERSION  — release version, no leading 'v' (e.g. 1.0.1)
+#   QORK_ARCH     — nfpm/Go arch nomenclature: "amd64" (x86_64) or "arm64" (aarch64)
+#   QORK_BIN      — path to the extracted `qork` binary staged for this arch
+#
+# nfpm docs: https://nfpm.goreleaser.com/configuration/
+
+name: qork
+arch: ${QORK_ARCH}
+platform: linux
+version: ${QORK_VERSION}
+# cargo-dist tags are plain SemVer (e.g. 1.0.1); let nfpm mold it per-packager.
+version_schema: semver
+maintainer: Emmett S <hey@emmetts.dev>
+description: |
+  Shorten URLs from your terminal — the qork.me command-line client.
+  qork is a small, fast CLI that turns long URLs into qork.me short links
+  (and back) without leaving the shell.
+vendor: QubeTX
+homepage: https://qork.me
+license: PolyForm-Noncommercial-1.0.0
+# Debian archive section + priority (cosmetic on rpm).
+section: utils
+priority: optional
+
+contents:
+  # Single binary on PATH. /usr/bin (not /usr/local/bin) is the convention for
+  # distro-package-managed binaries on both Debian and RPM systems.
+  - src: ${QORK_BIN}
+    dst: /usr/bin/qork
+    file_info:
+      mode: 0755
+  - src: LICENSE
+    dst: /usr/share/doc/qork/LICENSE
+    file_info:
+      mode: 0644
+  - src: README.md
+    dst: /usr/share/doc/qork/README.md
+    file_info:
+      mode: 0644

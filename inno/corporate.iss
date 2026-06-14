@@ -39,7 +39,9 @@ AppVerName={#MyAppFullName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
-AppUpdatesURL={#MyAppURL}
+; Point ARP's "update info" link at the GitHub Releases page (where the
+; installers actually live), mirroring wb300's AppUpdatesURL=.../releases.
+AppUpdatesURL=https://github.com/QubeTX/qork/releases
 ; perUser install location: %LocalAppData%\Programs\qork — same path as the
 ; Corporate MSI by design. {userpf} is Inno Setup's per-user "Program Files"
 ; equivalent and resolves to %LocalAppData%\Programs.

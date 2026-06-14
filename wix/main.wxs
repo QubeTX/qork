@@ -155,7 +155,7 @@
         <Feature
             Id='Binaries'
             Title='Application'
-            Description='Installs all binaries and the license.'
+            Description='Installs the qork binary.'
             Level='1'
             ConfigurableDirectory='APPLICATIONFOLDER'
             AllowAdvertise='no'

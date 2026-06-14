@@ -25,6 +25,7 @@ include = [
     "/wix/**",
     "/wix-corporate/**",
     "/inno/**",
+    "/nfpm.yaml",
 ]
 
 [package.metadata.wix]
