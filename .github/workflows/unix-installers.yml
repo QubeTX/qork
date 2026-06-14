@@ -283,13 +283,21 @@ jobs:
               exit 1
             fi
 
-            export QORK_ARCH="$arch"
-            export QORK_BIN="$bin"
+            # Render a concrete per-arch config. nfpm's own env-var expansion
+            # does NOT apply to the contents.src glob (it failed with
+            # "glob failed: ${QORK_BIN}: no matching files"), so substitute the
+            # placeholders ourselves with sed — dependency-free and unambiguous.
+            # The `|` delimiter keeps the binary path's slashes literal; the
+            # `\${...}` patterns match the literal placeholders in nfpm.yaml.
+            sed \
+              -e "s|\${QORK_ARCH}|${arch}|g" \
+              -e "s|\${QORK_VERSION}|${QORK_VERSION}|g" \
+              -e "s|\${QORK_BIN}|${bin}|g" \
+              nfpm.yaml > "nfpm-${arch}.yaml"
 
-            # nfpm expands ${QORK_*} env vars in nfpm.yaml at package time.
             # --target as a filename writes exactly that name.
-            nfpm package --config nfpm.yaml --packager deb --target "out/qork-${target}.deb"
-            nfpm package --config nfpm.yaml --packager rpm --target "out/qork-${target}.rpm"
+            nfpm package --config "nfpm-${arch}.yaml" --packager deb --target "out/qork-${target}.deb"
+            nfpm package --config "nfpm-${arch}.yaml" --packager rpm --target "out/qork-${target}.rpm"
 
             if [ ! -f "out/qork-${target}.deb" ] || [ ! -f "out/qork-${target}.rpm" ]; then
               echo "nfpm did not produce expected .deb/.rpm for $target" >&2

@@ -4,8 +4,9 @@
 # one .rpm per architecture (x86_64 + aarch64) from the cargo-dist-built
 # binaries and uploads them to the GitHub Release for the tag.
 #
-# The workflow sets two environment variables before each `nfpm package` run;
-# nfpm expands ${VAR} references in fields at package time:
+# The workflow renders the ${...} placeholders below into a concrete per-arch
+# config with `sed` before each `nfpm package` run (nfpm's own env expansion
+# doesn't cover the contents.src glob):
 #   QORK_VERSION  — release version, no leading 'v' (e.g. 1.0.1)
 #   QORK_ARCH     — nfpm/Go arch nomenclature: "amd64" (x86_64) or "arm64" (aarch64)
 #   QORK_BIN      — path to the extracted `qork` binary staged for this arch
