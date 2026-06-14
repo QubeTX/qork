@@ -64,9 +64,15 @@ one-liner above is the recommended path; on Windows the MSI/EXE installer is rec
 ### Updating & uninstalling
 
 ```sh
-qork update      # check GitHub Releases and update in place
-qork uninstall   # remove the installed binary
+qork update            # update in place — re-runs the matching installer (MSI/EXE/cargo)
+qork uninstall         # fully remove qork from this system (every platform)
+qork uninstall --yes   # …without the confirmation prompt (for scripts/CI)
 ```
+
+`qork update` is aware of how qork was installed and re-runs the matching installer
+(Global/Corporate MSI, Inno EXE, or `cargo`). `qork uninstall` fully removes qork on every
+platform — including Windows — taking the binary, its PATH entry, the Add/Remove-Programs
+entry (for MSI/EXE installs), and the install marker with it.
 
 ---
 
@@ -91,15 +97,26 @@ qork https://example.com | pbcopy          # macOS — copy to clipboard
 LINK=$(qork https://example.com)           # capture in a variable
 ```
 
+### Commands & the safety check
+
+`qork help`, `qork update`, and `qork uninstall` are recognized as commands (whole-word,
+case-insensitive) — never treated as URLs. Everything else is shortened.
+
+Before shortening, qork checks the link is real: it rejects accidentally-pasted text and
+refuses a dead link (a live 404/410 or a host that won't resolve). Auth walls (401/403), 5xx,
+and slow sites still shorten. Pass `--no-check` to skip the check entirely.
+
 ### Options
 
 | Flag | Description |
 |---|---|
 | `-a`, `--alias <ALIAS>` | Request a custom short code (3–50 chars, letters/numbers/hyphens) |
 | `--json` | Print the raw JSON response instead of just the URL (great for scripts/agents) |
+| `--no-check` | Skip the pre-shorten check (shorten without verifying the link is live) |
 | `--no-color` | Disable colored output |
 | `--api-base <URL>` | Call a different API base (default `https://qork.me`); also `QORK_API_BASE` |
-| `-h`, `--help` | Print help |
+| `-y`, `--yes` | Skip the `uninstall` confirmation prompt (required for non-interactive use) |
+| `-h`, `--help` | Print help (`qork help` and `man qork` also work) |
 | `-V`, `--version` | Print version |
 
 ### Examples
